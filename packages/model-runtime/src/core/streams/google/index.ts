@@ -1,4 +1,4 @@
-import { GenerateContentResponse } from '@google/genai';
+import { GenerateContentResponse, Part } from '@google/genai';
 import { GroundingSearch } from '@lobechat/types';
 
 import { ChatStreamCallbacks } from '../../../types';
@@ -74,19 +74,27 @@ const transformGoogleGenerativeAIStream = (
     }
   }
 
-  const functionCalls = chunk.functionCalls;
+  // Parse function calls from candidate.content.parts
+  const functionCalls =
+    candidate?.content?.parts
+      ?.filter((part: any) => part.functionCall)
+      .map((part: Part) => ({
+        ...part.functionCall,
+        thoughtSignature: part.thoughtSignature,
+      })) || [];
 
-  if (functionCalls) {
+  if (functionCalls.length > 0) {
     return [
       {
         data: functionCalls.map(
-          (value, index): StreamToolCallChunkData => ({
+          (value, index: number): StreamToolCallChunkData => ({
             function: {
               arguments: JSON.stringify(value.args),
               name: value.name,
             },
             id: generateToolCallId(index, value.name),
             index: index,
+            thoughtSignature: value.thoughtSignature,
             type: 'function',
           }),
         ),
@@ -97,7 +105,13 @@ const transformGoogleGenerativeAIStream = (
     ];
   }
 
-  const text = chunk.text;
+  // Parse text from candidate.content.parts
+  // Filter out thought content (thought: true) only, keep thoughtSignature as it's just metadata
+  const text =
+    candidate?.content?.parts
+      ?.filter((part: any) => part.text && !part.thought)
+      .map((part: any) => part.text)
+      .join('') || '';
 
   if (candidate) {
     // 首先检查是否为 reasoning 内容 (thought: true)
@@ -134,7 +148,8 @@ const transformGoogleGenerativeAIStream = (
 
     // Check for image data before handling finishReason
     if (Array.isArray(candidate.content?.parts) && candidate.content.parts.length > 0) {
-      const part = candidate.content.parts[0];
+      // Filter out reasoning content and get first non-reasoning part
+      const part = candidate.content.parts.find((p: any) => !p.thought);
 
       if (part && part.inlineData && part.inlineData.data && part.inlineData.mimeType) {
         const imageChunk = {
@@ -168,7 +183,11 @@ const transformGoogleGenerativeAIStream = (
           ...usageChunks,
         ].filter(Boolean) as StreamProtocolChunk[];
       }
-      return { data: candidate.finishReason, id: context?.id, type: 'stop' };
+      // 当有 finishReason 但没有 text 内容时,发送一个空的 text 块以停止加载动画
+      return [
+        { data: '', id: context?.id, type: 'text' },
+        { data: candidate.finishReason, id: context?.id, type: 'stop' },
+      ];
     }
 
     if (!!text?.trim()) return { data: text, id: context?.id, type: 'text' };
