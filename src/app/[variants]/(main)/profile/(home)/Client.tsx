@@ -3,7 +3,15 @@
 import { LoadingOutlined } from '@ant-design/icons';
 import { Button, Divider, Input, Skeleton, Spin, Typography, Upload } from 'antd';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CSSProperties, ReactNode, memo, useCallback, useEffect, useState } from 'react';
+import {
+  CSSProperties,
+  ChangeEvent,
+  ReactNode,
+  memo,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 
@@ -23,6 +31,7 @@ interface ProfileRowProps {
   action?: ReactNode;
   children: ReactNode;
   label: string;
+  mobile?: boolean;
 }
 
 const rowStyle: CSSProperties = {
@@ -35,17 +44,31 @@ const labelStyle: CSSProperties = {
   width: 160,
 };
 
-const ProfileRow = memo<ProfileRowProps>(({ label, children, action }) => (
-  <Flexbox align="center" gap={24} horizontal justify="space-between" style={rowStyle}>
-    <Flexbox align="center" gap={24} horizontal style={{ flex: 1 }}>
-      <Typography.Text style={labelStyle}>{label}</Typography.Text>
-      <Flexbox style={{ flex: 1 }}>{children}</Flexbox>
-    </Flexbox>
-    {action && <Flexbox>{action}</Flexbox>}
-  </Flexbox>
-));
+const ProfileRow = memo<ProfileRowProps>(({ label, children, action, mobile }) => {
+  if (mobile) {
+    return (
+      <Flexbox gap={12} style={rowStyle}>
+        <Flexbox align="center" horizontal justify="space-between">
+          <Typography.Text strong>{label}</Typography.Text>
+          {action}
+        </Flexbox>
+        <Flexbox>{children}</Flexbox>
+      </Flexbox>
+    );
+  }
 
-const AvatarRow = memo(() => {
+  return (
+    <Flexbox align="center" gap={24} horizontal justify="space-between" style={rowStyle}>
+      <Flexbox align="center" gap={24} horizontal style={{ flex: 1 }}>
+        <Typography.Text style={labelStyle}>{label}</Typography.Text>
+        <Flexbox style={{ flex: 1 }}>{children}</Flexbox>
+      </Flexbox>
+      {action && <Flexbox>{action}</Flexbox>}
+    </Flexbox>
+  );
+});
+
+const AvatarRow = memo<{ mobile?: boolean }>(({ mobile }) => {
   const { t } = useTranslation('auth');
   const isLogin = useUserStore(authSelectors.isLogin);
   const updateAvatar = useUserStore((s) => s.updateAvatar);
@@ -81,34 +104,48 @@ const AvatarRow = memo(() => {
 
   const canUpload = !enableAuth || isLogin;
 
+  const avatarContent = canUpload ? (
+    <Spin indicator={<LoadingOutlined spin />} spinning={uploading}>
+      <Upload beforeUpload={handleUploadAvatar} itemRender={() => void 0} maxCount={1}>
+        <UserAvatar clickable size={40} />
+      </Upload>
+    </Spin>
+  ) : (
+    <UserAvatar size={40} />
+  );
+
+  const updateAction = canUpload ? (
+    <Upload beforeUpload={handleUploadAvatar} itemRender={() => void 0} maxCount={1}>
+      <Typography.Text style={{ cursor: 'pointer', fontSize: 13 }}>
+        {t('profile.updateAvatar')}
+      </Typography.Text>
+    </Upload>
+  ) : null;
+
+  if (mobile) {
+    return (
+      <Flexbox gap={12} style={rowStyle}>
+        <Flexbox align="center" horizontal justify="space-between">
+          <Typography.Text strong>{t('profile.avatar')}</Typography.Text>
+          {updateAction}
+        </Flexbox>
+        <Flexbox>{avatarContent}</Flexbox>
+      </Flexbox>
+    );
+  }
+
   return (
     <Flexbox align="center" gap={24} horizontal justify="space-between" style={rowStyle}>
       <Flexbox align="center" gap={24} horizontal style={{ flex: 1 }}>
         <Typography.Text style={labelStyle}>{t('profile.avatar')}</Typography.Text>
-        <Flexbox style={{ flex: 1 }}>
-          {canUpload ? (
-            <Spin indicator={<LoadingOutlined spin />} spinning={uploading}>
-              <Upload beforeUpload={handleUploadAvatar} itemRender={() => void 0} maxCount={1}>
-                <UserAvatar clickable size={40} />
-              </Upload>
-            </Spin>
-          ) : (
-            <UserAvatar size={40} />
-          )}
-        </Flexbox>
+        <Flexbox style={{ flex: 1 }}>{avatarContent}</Flexbox>
       </Flexbox>
-      {canUpload && (
-        <Upload beforeUpload={handleUploadAvatar} itemRender={() => void 0} maxCount={1}>
-          <Typography.Text style={{ cursor: 'pointer', fontSize: 13 }}>
-            {t('profile.updateAvatar')}
-          </Typography.Text>
-        </Upload>
-      )}
+      {updateAction}
     </Flexbox>
   );
 });
 
-const FullNameRow = memo(() => {
+const FullNameRow = memo<{ mobile?: boolean }>(({ mobile }) => {
   const { t } = useTranslation('auth');
   const fullName = useUserStore(userProfileSelectors.fullName);
   const updateFullName = useUserStore((s) => s.updateFullName);
@@ -144,66 +181,240 @@ const FullNameRow = memo(() => {
     }
   }, [editValue, updateFullName]);
 
+  const editingContent = (
+    <motion.div
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      initial={{ opacity: 0, y: -10 }}
+      key="editing"
+      transition={{ duration: 0.2 }}
+    >
+      <Flexbox gap={12}>
+        {!mobile && <Typography.Text strong>{t('profile.fullNameInputHint')}</Typography.Text>}
+        <Input
+          autoFocus
+          onChange={(e) => setEditValue(e.target.value)}
+          onPressEnter={handleSave}
+          placeholder={t('profile.fullName')}
+          value={editValue}
+        />
+        <Flexbox gap={8} horizontal justify="flex-end">
+          <Button disabled={saving} onClick={handleCancel} size="small">
+            {t('profile.cancel')}
+          </Button>
+          <Button loading={saving} onClick={handleSave} size="small" type="primary">
+            {t('profile.save')}
+          </Button>
+        </Flexbox>
+      </Flexbox>
+    </motion.div>
+  );
+
+  const displayContent = (
+    <motion.div
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      initial={{ opacity: 0 }}
+      key="display"
+      transition={{ duration: 0.2 }}
+    >
+      {mobile ? (
+        <Typography.Text>{fullName || '--'}</Typography.Text>
+      ) : (
+        <Flexbox align="center" horizontal justify="space-between">
+          <Typography.Text>{fullName || '--'}</Typography.Text>
+          <Typography.Text onClick={handleStartEdit} style={{ cursor: 'pointer', fontSize: 13 }}>
+            {t('profile.updateFullName')}
+          </Typography.Text>
+        </Flexbox>
+      )}
+    </motion.div>
+  );
+
+  if (mobile) {
+    return (
+      <Flexbox gap={12} style={rowStyle}>
+        <Flexbox align="center" horizontal justify="space-between">
+          <Typography.Text strong>{t('profile.fullName')}</Typography.Text>
+          {!isEditing && (
+            <Typography.Text onClick={handleStartEdit} style={{ cursor: 'pointer', fontSize: 13 }}>
+              {t('profile.updateFullName')}
+            </Typography.Text>
+          )}
+        </Flexbox>
+        <AnimatePresence mode="wait">{isEditing ? editingContent : displayContent}</AnimatePresence>
+      </Flexbox>
+    );
+  }
+
   return (
     <Flexbox gap={24} horizontal style={rowStyle}>
       <Typography.Text style={labelStyle}>{t('profile.fullName')}</Typography.Text>
       <Flexbox style={{ flex: 1 }}>
-        <AnimatePresence mode="wait">
-          {isEditing ? (
-            <motion.div
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              initial={{ opacity: 0, y: -10 }}
-              key="editing"
-              transition={{ duration: 0.2 }}
-            >
-              <Flexbox gap={12}>
-                <Typography.Text strong>{t('profile.fullNameInputHint')}</Typography.Text>
-                <Input
-                  autoFocus
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onPressEnter={handleSave}
-                  placeholder={t('profile.fullName')}
-                  value={editValue}
-                />
-                <Flexbox gap={8} horizontal justify="flex-end">
-                  <Button disabled={saving} onClick={handleCancel} size="small">
-                    {t('profile.cancel')}
-                  </Button>
-                  <Button loading={saving} onClick={handleSave} size="small" type="primary">
-                    {t('profile.save')}
-                  </Button>
-                </Flexbox>
-              </Flexbox>
-            </motion.div>
-          ) : (
-            <motion.div
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              initial={{ opacity: 0 }}
-              key="display"
-              transition={{ duration: 0.2 }}
-            >
-              <Flexbox align="center" horizontal justify="space-between">
-                <Typography.Text>{fullName || '--'}</Typography.Text>
-                <Typography.Text
-                  onClick={handleStartEdit}
-                  style={{ cursor: 'pointer', fontSize: 13 }}
-                >
-                  {t('profile.updateFullName')}
-                </Typography.Text>
-              </Flexbox>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <AnimatePresence mode="wait">{isEditing ? editingContent : displayContent}</AnimatePresence>
       </Flexbox>
     </Flexbox>
   );
 });
 
-const PasswordRow = memo(() => {
+const UsernameRow = memo<{ mobile?: boolean }>(({ mobile }) => {
+  const { t } = useTranslation('auth');
+  const username = useUserStore(userProfileSelectors.username);
+  const updateUsername = useUserStore((s) => s.updateUsername);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const usernameRegex = /^\w+$/;
+
+  const handleStartEdit = () => {
+    setEditValue(username || '');
+    setError('');
+    setIsEditing(true);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditValue('');
+    setError('');
+  };
+
+  const validateUsername = (value: string): string => {
+    const trimmed = value.trim();
+    if (!trimmed) return t('profile.usernameRequired');
+    if (!usernameRegex.test(trimmed)) return t('profile.usernameRule');
+    return '';
+  };
+
+  const handleSave = useCallback(async () => {
+    const validationError = validateUsername(editValue);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError('');
+      await updateUsername(editValue.trim());
+      setIsEditing(false);
+    } catch (err: any) {
+      console.error('Failed to update username:', err);
+      // Handle duplicate username error
+      if (err?.data?.code === 'CONFLICT' || err?.message === 'USERNAME_TAKEN') {
+        setError(t('profile.usernameDuplicate'));
+      } else {
+        setError(t('profile.usernameUpdateFailed'));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [editValue, updateUsername, t]);
+
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setEditValue(value);
+
+    if (!value.trim()) {
+      setError('');
+      return;
+    }
+
+    if (!usernameRegex.test(value)) {
+      setError(t('profile.usernameRule'));
+      return;
+    }
+
+    setError('');
+  };
+
+  const editingContent = (
+    <motion.div
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      initial={{ opacity: 0, y: -10 }}
+      key="editing"
+      transition={{ duration: 0.2 }}
+    >
+      <Flexbox gap={12}>
+        {!mobile && <Typography.Text strong>{t('profile.usernameInputHint')}</Typography.Text>}
+        <Input
+          autoFocus
+          onChange={handleInputChange}
+          onPressEnter={handleSave}
+          placeholder={t('profile.usernamePlaceholder')}
+          status={error ? 'error' : undefined}
+          value={editValue}
+        />
+        {error && (
+          <Typography.Text style={{ fontSize: 12 }} type="danger">
+            {error}
+          </Typography.Text>
+        )}
+        <Flexbox gap={8} horizontal justify="flex-end">
+          <Button disabled={saving} onClick={handleCancel} size="small">
+            {t('profile.cancel')}
+          </Button>
+          <Button loading={saving} onClick={handleSave} size="small" type="primary">
+            {t('profile.save')}
+          </Button>
+        </Flexbox>
+      </Flexbox>
+    </motion.div>
+  );
+
+  const displayContent = (
+    <motion.div
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      initial={{ opacity: 0 }}
+      key="display"
+      transition={{ duration: 0.2 }}
+    >
+      {mobile ? (
+        <Typography.Text>{username || '--'}</Typography.Text>
+      ) : (
+        <Flexbox align="center" horizontal justify="space-between">
+          <Typography.Text>{username || '--'}</Typography.Text>
+          <Typography.Text onClick={handleStartEdit} style={{ cursor: 'pointer', fontSize: 13 }}>
+            {t('profile.updateUsername')}
+          </Typography.Text>
+        </Flexbox>
+      )}
+    </motion.div>
+  );
+
+  if (mobile) {
+    return (
+      <Flexbox gap={12} style={rowStyle}>
+        <Flexbox align="center" horizontal justify="space-between">
+          <Typography.Text strong>{t('profile.username')}</Typography.Text>
+          {!isEditing && (
+            <Typography.Text onClick={handleStartEdit} style={{ cursor: 'pointer', fontSize: 13 }}>
+              {t('profile.updateUsername')}
+            </Typography.Text>
+          )}
+        </Flexbox>
+        <AnimatePresence mode="wait">{isEditing ? editingContent : displayContent}</AnimatePresence>
+      </Flexbox>
+    );
+  }
+
+  return (
+    <Flexbox gap={24} horizontal style={rowStyle}>
+      <Typography.Text style={labelStyle}>{t('profile.username')}</Typography.Text>
+      <Flexbox style={{ flex: 1 }}>
+        <AnimatePresence mode="wait">{isEditing ? editingContent : displayContent}</AnimatePresence>
+      </Flexbox>
+    </Flexbox>
+  );
+});
+
+const PasswordRow = memo<{ mobile?: boolean }>(({ mobile }) => {
   const { t } = useTranslation('auth');
   const userProfile = useUserStore(userProfileSelectors.userProfile);
+  const hasPasswordAccount = useUserStore(authSelectors.hasPasswordAccount);
   const [sending, setSending] = useState(false);
 
   const handleChangePassword = useCallback(async () => {
@@ -239,12 +450,13 @@ const PasswordRow = memo(() => {
             opacity: sending ? 0.5 : 1,
           }}
         >
-          {t('profile.changePassword')}
+          {hasPasswordAccount ? t('profile.changePassword') : t('profile.setPassword')}
         </Typography.Text>
       }
       label={t('profile.password')}
+      mobile={mobile}
     >
-      <Typography.Text>••••••</Typography.Text>
+      <Typography.Text>{hasPasswordAccount ? '••••••' : '--'}</Typography.Text>
     </ProfileRow>
   );
 });
@@ -254,12 +466,10 @@ const Client = memo<{ mobile?: boolean }>(({ mobile }) => {
     authSelectors.isLoginWithNextAuth(s),
     authSelectors.isLoginWithBetterAuth(s),
   ]);
-  const [username, userProfile, isUserLoaded] = useUserStore((s) => [
-    userProfileSelectors.username(s),
+  const [userProfile, isUserLoaded] = useUserStore((s) => [
     userProfileSelectors.userProfile(s),
     s.isLoaded,
   ]);
-  const isEmailPasswordAuth = useUserStore(authSelectors.isEmailPasswordAuth);
   const isLoadedAuthProviders = useUserStore(authSelectors.isLoadedAuthProviders);
   const fetchAuthProviders = useUserStore((s) => s.fetchAuthProviders);
 
@@ -293,26 +503,24 @@ const Client = memo<{ mobile?: boolean }>(({ mobile }) => {
       <Divider style={{ marginBlock: 0 }} />
 
       {/* Avatar Row - Editable */}
-      <AvatarRow />
+      <AvatarRow mobile={mobile} />
 
       <Divider style={{ margin: 0 }} />
 
       {/* Full Name Row - Editable */}
-      <FullNameRow />
+      <FullNameRow mobile={mobile} />
 
       <Divider style={{ margin: 0 }} />
 
-      {/* Username Row - Read Only */}
-      <ProfileRow label={t('profile.username')}>
-        <Typography.Text>{username || '--'}</Typography.Text>
-      </ProfileRow>
+      {/* Username Row - Editable */}
+      <UsernameRow mobile={mobile} />
 
       <Divider style={{ margin: 0 }} />
 
-      {/* Password Row - Only for Better Auth users with credential login */}
-      {isLoginWithBetterAuth && isEmailPasswordAuth && (
+      {/* Password Row - For Better Auth users to change or set password */}
+      {isLoginWithBetterAuth && (
         <>
-          <PasswordRow />
+          <PasswordRow mobile={mobile} />
           <Divider style={{ margin: 0 }} />
         </>
       )}
@@ -320,7 +528,7 @@ const Client = memo<{ mobile?: boolean }>(({ mobile }) => {
       {/* Email Row - Read Only */}
       {isLoginWithAuth && userProfile?.email && (
         <>
-          <ProfileRow label={t('profile.email')}>
+          <ProfileRow label={t('profile.email')} mobile={mobile}>
             <Typography.Text>{userProfile.email}</Typography.Text>
           </ProfileRow>
           <Divider style={{ margin: 0 }} />
@@ -329,7 +537,7 @@ const Client = memo<{ mobile?: boolean }>(({ mobile }) => {
 
       {/* SSO Providers Row */}
       {isLoginWithAuth && (
-        <ProfileRow label={t('profile.sso.providers')}>
+        <ProfileRow label={t('profile.sso.providers')} mobile={mobile}>
           <SSOProvidersList />
         </ProfileRow>
       )}

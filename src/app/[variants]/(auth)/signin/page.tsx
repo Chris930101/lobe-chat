@@ -2,7 +2,7 @@
 
 import { ActionIcon, Button } from '@lobehub/ui';
 import { LobeHub } from '@lobehub/ui/brand';
-import { Form, Input, type InputRef } from 'antd';
+import { Form, Input, type InputRef, Skeleton } from 'antd';
 import { createStyles, useTheme } from 'antd-style';
 import { ChevronLeft, ChevronRight, Lock, Mail } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -10,14 +10,16 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 
+import type { CheckUserResponseData } from '@/app/(backend)/api/auth/check-user/route';
+import type { ResolveUsernameResponseData } from '@/app/(backend)/api/auth/resolve-username/route';
 import { message } from '@/components/AntdStaticMethods';
 import AuthIcons from '@/components/NextAuth/AuthIcons';
 import { getAuthConfig } from '@/envs/auth';
 import { requestPasswordReset, signIn } from '@/libs/better-auth/auth-client';
 import { isBuiltinProvider, normalizeProviderId } from '@/libs/better-auth/utils/client';
-import { useUserStore } from '@/store/user';
+import { useServerConfigStore } from '@/store/serverConfig';
 
-const useStyles = createStyles(({ css, token }) => ({
+const useStyles = createStyles(({ css, token, responsive }) => ({
   backButton: css`
     cursor: pointer;
     font-size: 14px;
@@ -28,10 +30,13 @@ const useStyles = createStyles(({ css, token }) => ({
     }
   `,
   card: css`
+    display: flex;
+    flex-direction: column;
     padding-block: 2.5rem;
     padding-inline: 2rem;
   `,
   container: css`
+    overflow: hidden;
     width: 360px;
     border: 1px solid ${token.colorBorder};
     border-radius: ${token.borderRadiusLG}px;
@@ -40,6 +45,11 @@ const useStyles = createStyles(({ css, token }) => ({
     flex: 1;
     height: 1px;
     background: ${token.colorBorder};
+  `,
+  dividerRow: css`
+    ${responsive.mobile} {
+      order: -1;
+    }
   `,
   dividerText: css`
     font-size: 14px;
@@ -50,6 +60,13 @@ const useStyles = createStyles(({ css, token }) => ({
     color: ${token.colorTextSecondary};
     text-align: center;
   `,
+  emailForm: css`
+    margin-block-start: 0.5rem;
+
+    ${responsive.mobile} {
+      margin-block: 0;
+    }
+  `,
   footer: css`
     padding: 1rem;
     border-block-start: 1px solid ${token.colorBorder};
@@ -59,6 +76,12 @@ const useStyles = createStyles(({ css, token }) => ({
     text-align: center;
 
     background: ${token.colorBgElevated};
+  `,
+  socialSection: css`
+    ${responsive.mobile} {
+      order: 1;
+      margin-block-start: 1rem;
+    }
   `,
   subtitle: css`
     margin-block-start: 0.5rem;
@@ -76,11 +99,20 @@ const useStyles = createStyles(({ css, token }) => ({
   `,
 }));
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_REGEX = /^\w+$/;
+
 type Step = 'email' | 'password';
+type IdentifierType = 'email' | 'username';
 
 interface SignInFormValues {
   email: string;
   password: string;
+}
+
+interface ResolvedEmailResult {
+  email: string;
+  identifierType: IdentifierType;
 }
 
 export default function SignInPage() {
@@ -97,7 +129,8 @@ export default function SignInPage() {
   const [email, setEmail] = useState('');
   const emailInputRef = useRef<InputRef>(null);
   const passwordInputRef = useRef<InputRef>(null);
-  const oAuthSSOProviders = useUserStore((s) => s.oAuthSSOProviders || []);
+  const serverConfigInit = useServerConfigStore((s) => s.serverConfigInit);
+  const oAuthSSOProviders = useServerConfigStore((s) => s.serverConfig.oAuthSSOProviders) || [];
 
   // Auto-focus input when step changes
   useEffect(() => {
@@ -152,36 +185,83 @@ export default function SignInPage() {
     }
   };
 
-  // Check if user exists
-  const handleCheckUser = async (values: Pick<SignInFormValues, 'email'>) => {
-    setLoading(true);
+  const resolveEmailFromIdentifier = async (
+    identifier: string,
+  ): Promise<ResolvedEmailResult | null> => {
+    const trimmedIdentifier = identifier.trim();
+
+    if (!trimmedIdentifier) return null;
+
+    const isEmailIdentifier = EMAIL_REGEX.test(trimmedIdentifier);
+
+    if (isEmailIdentifier) {
+      return { email: trimmedIdentifier.toLowerCase(), identifierType: 'email' };
+    }
+
+    if (!USERNAME_REGEX.test(trimmedIdentifier)) {
+      message.error(t('betterAuth.errors.emailInvalid'));
+      return null;
+    }
+
     try {
-      const response = await fetch('/api/auth/check-user', {
-        body: JSON.stringify({ email: values.email }),
+      const response = await fetch('/api/auth/resolve-username', {
+        body: JSON.stringify({ username: trimmedIdentifier }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       });
 
-      const data = await response.json();
+      const data: ResolveUsernameResponseData = await response.json();
+
+      if (!response.ok || !data.exists || !data.email) {
+        message.error(t('betterAuth.errors.usernameNotRegistered'));
+        return null;
+      }
+
+      return { email: data.email, identifierType: 'username' };
+    } catch (error) {
+      console.error('Error resolving username:', error);
+      message.error(t('betterAuth.signin.error'));
+      return null;
+    }
+  };
+
+  // Check if user exists
+  const handleCheckUser = async (values: Pick<SignInFormValues, 'email'>) => {
+    setLoading(true);
+    try {
+      const resolvedEmail = await resolveEmailFromIdentifier(values.email);
+      if (!resolvedEmail) return;
+      const { email: targetEmail, identifierType } = resolvedEmail;
+
+      const response = await fetch('/api/auth/check-user', {
+        body: JSON.stringify({ email: targetEmail }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+
+      const data: CheckUserResponseData = await response.json();
 
       if (!data.exists) {
-        // User not found, redirect to signup page with email pre-filled
+        if (identifierType === 'username') {
+          message.error(t('betterAuth.errors.usernameNotRegistered'));
+          return;
+        }
+
         const callbackUrl = searchParams.get('callbackUrl') || '/';
         router.push(
-          `/signup?email=${encodeURIComponent(values.email)}&callbackUrl=${encodeURIComponent(callbackUrl)}`,
+          `/signup?email=${encodeURIComponent(targetEmail)}&callbackUrl=${encodeURIComponent(callbackUrl)}`,
         );
         return;
       }
-
-      setEmail(values.email);
-
-      if (enableMagicLink) {
-        await handleSendMagicLink(values.email);
-        return;
-      }
+      setEmail(targetEmail);
 
       if (data.hasPassword) {
         setStep('password');
+        return;
+      }
+
+      if (enableMagicLink) {
+        await handleSendMagicLink(targetEmail);
         return;
       }
 
@@ -301,11 +381,21 @@ export default function SignInPage() {
 
           {step === 'email' && (
             <>
-              <p className={styles.subtitle}>{t('betterAuth.signin.emailStep.subtitle')}</p>
+              {/* Social Login Section Skeleton */}
+              {!serverConfigInit && (
+                <Flexbox className={styles.socialSection} gap={12}>
+                  <Skeleton.Button active block size="large" />
+                  <Flexbox align="center" className={styles.dividerRow} gap={12} horizontal>
+                    <div className={styles.divider} />
+                    <Skeleton.Input active size="small" style={{ minWidth: 80, width: 80 }} />
+                    <div className={styles.divider} />
+                  </Flexbox>
+                </Flexbox>
+              )}
 
               {/* Social Login Section */}
-              {oAuthSSOProviders.length > 0 && (
-                <Flexbox gap={12} style={{ marginTop: '2rem' }}>
+              {serverConfigInit && oAuthSSOProviders.length > 0 && (
+                <Flexbox className={styles.socialSection} gap={12}>
                   {oAuthSSOProviders.map((provider) => (
                     <Button
                       block
@@ -320,7 +410,7 @@ export default function SignInPage() {
                   ))}
 
                   {/* Divider */}
-                  <Flexbox align="center" gap={12} horizontal>
+                  <Flexbox align="center" className={styles.dividerRow} gap={12} horizontal>
                     <div className={styles.divider} />
                     <span className={styles.dividerText}>
                       {t('betterAuth.signin.orContinueWith')}
@@ -331,16 +421,27 @@ export default function SignInPage() {
               )}
 
               <Form
+                className={styles.emailForm}
                 form={form}
                 layout="vertical"
                 onFinish={handleCheckUser}
-                style={{ marginTop: '0.5rem' }}
               >
                 <Form.Item
                   name="email"
                   rules={[
                     { message: t('betterAuth.errors.emailRequired'), required: true },
-                    { message: t('betterAuth.errors.emailInvalid'), type: 'email' },
+                    {
+                      validator: (_, value) => {
+                        if (!value) return Promise.resolve();
+
+                        const trimmedValue = (value as string).trim();
+                        if (EMAIL_REGEX.test(trimmedValue) || USERNAME_REGEX.test(trimmedValue)) {
+                          return Promise.resolve();
+                        }
+
+                        return Promise.reject(new Error(t('betterAuth.errors.emailInvalid')));
+                      },
+                    },
                   ]}
                   style={{ marginBottom: 0 }}
                 >

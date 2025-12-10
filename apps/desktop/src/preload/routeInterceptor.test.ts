@@ -46,7 +46,7 @@ describe('setupRouteInterceptors', () => {
       const externalUrl = 'https://google.com';
       const result = window.open(externalUrl, '_blank');
 
-      expect(invoke).toHaveBeenCalledWith('openExternalLink', externalUrl);
+      expect(invoke).toHaveBeenCalledWith('system.openExternalLink', externalUrl);
       expect(result).toBeNull();
     });
 
@@ -56,7 +56,7 @@ describe('setupRouteInterceptors', () => {
       const externalUrl = new URL('https://github.com');
       const result = window.open(externalUrl, '_blank');
 
-      expect(invoke).toHaveBeenCalledWith('openExternalLink', 'https://github.com/');
+      expect(invoke).toHaveBeenCalledWith('system.openExternalLink', 'https://github.com/');
       expect(result).toBeNull();
     });
 
@@ -69,7 +69,7 @@ describe('setupRouteInterceptors', () => {
       // We can't fully test the original behavior in happy-dom, but we can verify invoke is not called
       window.open(internalUrl);
 
-      expect(invoke).not.toHaveBeenCalledWith('openExternalLink', expect.anything());
+      expect(invoke).not.toHaveBeenCalledWith('system.openExternalLink', expect.anything());
     });
 
     it('should handle relative URL that resolves as internal link', () => {
@@ -81,7 +81,7 @@ describe('setupRouteInterceptors', () => {
       window.open(relativeUrl);
 
       // Since it's internal, it won't call invoke for external link
-      expect(invoke).not.toHaveBeenCalledWith('openExternalLink', expect.anything());
+      expect(invoke).not.toHaveBeenCalledWith('system.openExternalLink', expect.anything());
     });
   });
 
@@ -102,7 +102,7 @@ describe('setupRouteInterceptors', () => {
       // Wait for async handling
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(invoke).toHaveBeenCalledWith('openExternalLink', 'https://example.com/');
+      expect(invoke).toHaveBeenCalledWith('system.openExternalLink', 'https://example.com/');
       expect(preventDefaultSpy).toHaveBeenCalled();
       expect(stopPropagationSpy).toHaveBeenCalled();
     });
@@ -110,7 +110,12 @@ describe('setupRouteInterceptors', () => {
     it('should intercept internal link matching route pattern', async () => {
       setupRouteInterceptors();
 
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
 
       const link = document.createElement('a');
@@ -124,7 +129,7 @@ describe('setupRouteInterceptors', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(findMatchingRoute).toHaveBeenCalledWith('/desktop/devtools');
-      expect(invoke).toHaveBeenCalledWith('interceptRoute', {
+      expect(invoke).toHaveBeenCalledWith('windows.interceptRoute', {
         path: '/desktop/devtools',
         source: 'link-click',
         url: 'http://localhost:3000/desktop/devtools',
@@ -142,7 +147,12 @@ describe('setupRouteInterceptors', () => {
         pathname: '/desktop/devtools/console',
       });
 
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
 
       const link = document.createElement('a');
@@ -156,7 +166,7 @@ describe('setupRouteInterceptors', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(preventDefaultSpy).not.toHaveBeenCalled();
-      expect(invoke).not.toHaveBeenCalledWith('interceptRoute', expect.anything());
+      expect(invoke).not.toHaveBeenCalledWith('windows.interceptRoute', expect.anything());
     });
 
     it('should handle non-HTTP link protocols as external links', async () => {
@@ -174,7 +184,7 @@ describe('setupRouteInterceptors', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       // mailto: links are treated as external links by the URL constructor
-      expect(invoke).toHaveBeenCalledWith('openExternalLink', 'mailto:test@example.com');
+      expect(invoke).toHaveBeenCalledWith('system.openExternalLink', 'mailto:test@example.com');
       expect(preventDefaultSpy).toHaveBeenCalled();
     });
   });
@@ -183,14 +193,19 @@ describe('setupRouteInterceptors', () => {
     it('should intercept pushState for matched routes', () => {
       setupRouteInterceptors();
 
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
 
       const originalLength = history.length;
       history.pushState({}, '', '/desktop/devtools');
 
       expect(findMatchingRoute).toHaveBeenCalledWith('/desktop/devtools');
-      expect(invoke).toHaveBeenCalledWith('interceptRoute', {
+      expect(invoke).toHaveBeenCalledWith('windows.interceptRoute', {
         path: '/desktop/devtools',
         source: 'push-state',
         url: 'http://localhost:3000/desktop/devtools',
@@ -208,7 +223,12 @@ describe('setupRouteInterceptors', () => {
         pathname: '/desktop/devtools/console',
       });
 
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
 
       history.pushState({}, '', '/desktop/devtools/network');
@@ -225,7 +245,7 @@ describe('setupRouteInterceptors', () => {
 
       history.pushState({}, '', '/chat/new');
 
-      expect(invoke).not.toHaveBeenCalledWith('interceptRoute', expect.anything());
+      expect(invoke).not.toHaveBeenCalledWith('windows.interceptRoute', expect.anything());
     });
 
     it('should handle pushState errors gracefully', () => {
@@ -248,13 +268,18 @@ describe('setupRouteInterceptors', () => {
     it('should intercept replaceState for matched routes', () => {
       setupRouteInterceptors();
 
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
 
       history.replaceState({}, '', '/desktop/devtools');
 
       expect(findMatchingRoute).toHaveBeenCalledWith('/desktop/devtools');
-      expect(invoke).toHaveBeenCalledWith('interceptRoute', {
+      expect(invoke).toHaveBeenCalledWith('windows.interceptRoute', {
         path: '/desktop/devtools',
         source: 'replace-state',
         url: 'http://localhost:3000/desktop/devtools',
@@ -270,7 +295,12 @@ describe('setupRouteInterceptors', () => {
         pathname: '/desktop/devtools/console',
       });
 
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
 
       history.replaceState({}, '', '/desktop/devtools/network');
@@ -287,7 +317,7 @@ describe('setupRouteInterceptors', () => {
 
       history.replaceState({}, '', '/chat/session-123');
 
-      expect(invoke).not.toHaveBeenCalledWith('interceptRoute', expect.anything());
+      expect(invoke).not.toHaveBeenCalledWith('windows.interceptRoute', expect.anything());
     });
   });
 
@@ -296,7 +326,12 @@ describe('setupRouteInterceptors', () => {
       setupRouteInterceptors();
 
       // First trigger a route interception to add path to preventedPaths
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
       history.pushState({}, '', '/desktop/devtools');
 
@@ -338,14 +373,19 @@ describe('setupRouteInterceptors', () => {
 
       setupRouteInterceptors();
 
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
 
       history.pushState({}, '', '/desktop/devtools');
 
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(invoke).toHaveBeenCalledWith('interceptRoute', {
+      expect(invoke).toHaveBeenCalledWith('windows.interceptRoute', {
         path: '/desktop/devtools',
         source: 'push-state',
         url: 'http://localhost:3000/desktop/devtools',
@@ -358,7 +398,12 @@ describe('setupRouteInterceptors', () => {
 
       setupRouteInterceptors();
 
-      const matchedRoute = { pathPrefix: '/desktop/devtools', targetWindow: 'devtools' };
+      const matchedRoute = {
+        description: 'Developer Tools',
+        enabled: true,
+        pathPrefix: '/desktop/devtools',
+        targetWindow: 'devtools',
+      };
       vi.mocked(findMatchingRoute).mockReturnValue(matchedRoute);
 
       history.pushState({}, '', '/desktop/devtools');

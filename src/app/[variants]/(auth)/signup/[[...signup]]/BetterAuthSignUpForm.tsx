@@ -52,6 +52,7 @@ const useStyles = createStyles(({ css, token }) => ({
 }));
 
 interface SignUpFormValues {
+  confirmPassword: string;
   email: string;
   password: string;
 }
@@ -88,6 +89,21 @@ export default function BetterAuthSignUpForm() {
       });
 
       if (error) {
+        const isEmailDuplicate =
+          error.code === 'FAILED_TO_CREATE_USER' &&
+          // Postgres unique constraint violation
+          (error as any)?.details?.cause?.code === '23505';
+
+        if (isEmailDuplicate) {
+          message.error(t('betterAuth.errors.emailExists'));
+          return;
+        }
+
+        if (error.code === 'INVALID_EMAIL') {
+          message.error(t('betterAuth.errors.emailInvalid'));
+          return;
+        }
+
         message.error(error.message || t('betterAuth.signup.error'));
         return;
       }
@@ -159,6 +175,28 @@ export default function BetterAuthSignUpForm() {
             >
               <Input.Password
                 placeholder={t('betterAuth.signup.passwordPlaceholder')}
+                prefix={<Lock size={16} />}
+                size="large"
+              />
+            </Form.Item>
+
+            <Form.Item
+              dependencies={['password']}
+              name="confirmPassword"
+              rules={[
+                { message: t('betterAuth.errors.confirmPasswordRequired'), required: true },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue('password') === value) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(new Error(t('betterAuth.errors.passwordMismatch')));
+                  },
+                }),
+              ]}
+            >
+              <Input.Password
+                placeholder={t('betterAuth.signup.confirmPasswordPlaceholder')}
                 prefix={<Lock size={16} />}
                 size="large"
               />
